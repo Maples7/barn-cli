@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+
+const barnStarter = 'git@github.com:Maples7/barn.git';
+const shell = require('shelljs');
+
+if (!shell.which('git')) {
+  shell.echo('Sorry, this script requires git');
+  shell.exit(1);
+}
+
+const yargs = require('yargs')
+  .usage('Usage: $0 <command>')
+  .command(['init', 'i'], 'Initiate a barn project inside an empty folder')
+  .command([''])  // TODO
+  .demandCommand(1, 'You must provide a valid command')
+  .version()
+  .epilog('Copyright 2017, see https://github.com/Maples7/barn for more information.');
+const argv = yargs.argv;
+
+const command = argv._[0];
+switch (command) {
+  case 'init':
+    if (shell.exec(`git clone ${barnStarter}`).code !== 0) {
+      shell.echo(`Error: git clone ${barnStarter} failed`);
+      shell.exit(1);
+    } else {
+      const nameOfBarnStarter = barnStarter.slice(barnStarter.lastIndexOf('/') + 1, barnStarter.lastIndexOf('.'));
+      shell.cp('-R', `${nameOfBarnStarter}/`, './');
+      shell.rm('-rf', '.git');
+      shell.rm('-rf', nameOfBarnStarter);
+    }
+    break;
+  case '':
+    break;
+  default:
+    yargs.showHelp();
+    break;
+}
