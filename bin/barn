@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 const barnStarter = 'git@github.com:Maples7/barn.git';
+const debugUrl = 'http://localhost:7000/';
+
 const shell = require('shelljs');
 const debug = require('debug')('barn-cli');
 
@@ -13,26 +15,33 @@ const yargs = require('yargs')
   .usage('Usage: barn <command>')
   .demandCommand(1, 'You must provide a valid command')
   .command(['init', 'i'], 'Initiate a barn project with folder name `barn`')
-  // ...more to come
-  // .command([''])  
+  .command(['server', 's'], `start up a local server for debug on ${debugUrl}`)
+  .command(['deploy', 'd'], 'deploy to a git-based server such as Github Pages')
   .example('barn init', 'Initiate barn starter')
-  .help('h')
-  .alias('help', 'h')
-  .version()
-  .alias('v', 'version')
+  .example('barn server', `Start up debug server on ${debugUrl}`)
+  .example('barn deploy', 'deploy to a git-based server')
+  .help('h').alias('help', 'h')
+  .version().alias('v', 'version')
   .epilog('Copyright 2017, see https://github.com/Maples7/barn for more information.');
 const argv = yargs.argv;
 
 const command = argv._[0];
 debug(`command: ${command}`);
 switch (command) {
+  case 'i':
   case 'init':
     if (shell.exec(`git clone ${barnStarter}`).code !== 0) {
       shell.echo(`Error: git clone ${barnStarter} failed`);
       shell.exit(1);
     }
     break;
-  case '':
+  case 's':
+  case 'server':
+    // TODO
+    break;
+  case 'd':
+  case 'deploy':
+    // TODO
     break;
   default:
     yargs.showHelp();
