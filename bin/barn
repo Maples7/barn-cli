@@ -1,25 +1,31 @@
 #!/usr/bin/env node
 
-const barnStarter = 'git@github.com:Maples7/barn.git';
-const debugUrl = 'http://localhost:7000/';
+const config = require('../config.js');
+const barnStarter = config.barnStarterURL;
+const debugUrl = `http://${config.debug.host}:${config.debug.port}/`;
 
+const fs = require('fs');
 const shell = require('shelljs');
+const yaml = require('js-yaml');
 const debug = require('debug')('barn-cli');
 
 if (!shell.which('git')) {
-  shell.echo('Sorry, this script requires git');
-  shell.exit(1);
+  echoErrAndExit('Sorry, this script requires git');
 }
 
 const yargs = require('yargs')
   .usage('Usage: barn <command>')
   .demandCommand(1, 'You must provide a valid command')
   .command(['init', 'i'], 'Initiate a barn project with folder name `barn`')
+  .command(['generate', 'g'], 'Generate ultimate static website to folder `dist`')
   .command(['server', 's'], `Start up a local server for debug on ${debugUrl}`)
   .command(['deploy', 'd'], 'Deploy to a git-based server such as Github Pages')
+  .command(['clean', 'c'], 'Remove files in `dist` folder')
   .example('barn init', 'Initiate barn starter')
+  .example('barn generate', 'Generate ultimate static website')
   .example('barn server', `Start up debug server on ${debugUrl}`)
   .example('barn deploy', 'Deploy to a git-based server')
+  .example('barn clean', 'Clean files in `dist` folder')
   .help('h').alias('help', 'h')
   .version().alias('v', 'version')
   .epilog('Copyright 2017, see https://github.com/Maples7/barn for more information.');
@@ -31,12 +37,19 @@ switch (command) {
   case 'i':
   case 'init':
     if (shell.exec(`git clone ${barnStarter}`).code !== 0) {
-      shell.echo(`Error: git clone ${barnStarter} failed`);
-      shell.exit(1);
+      echoErrAndExit(`Error: git clone ${barnStarter} failed`);
     }
+    break;
+  case 'g':
+  case 'generate':
+    barnGenerate();
     break;
   case 's':
   case 'server':
+    // TODO
+    break;
+  case 'c':
+  case 'clean':
     // TODO
     break;
   case 'd':
@@ -46,4 +59,65 @@ switch (command) {
   default:
     yargs.showHelp();
     break;
+}
+
+// supporting functions
+
+/**
+ * print Error and exit
+ */
+function echoErrAndExit(msg) {
+  shell.echo(msg);
+  shell.exit(1);
+}
+
+/**
+ * read yaml file
+ */
+function readYaml(fileName, action) {
+  let content = null;
+  try {
+    debug(`Reading ${action} from ${fileName}`)
+    content = yaml.safeLoad(fs.readFileSync(fileName), 'utf8');
+    debug(`your ${action}:`);
+    debug(content);
+  } catch (e) {
+    echoErrAndExit(`Error: read configs from ${fileName} failed: ${e}`);
+  }
+  return content;
+}
+
+/**
+ * render html template
+ */
+function templateRender(theme, engine, locals) {
+  let html = null;
+  switch (theme) {
+    case 'pug':
+      const pug = require('pug');
+      html = pug.renderFile(`themes/${theme}/`, locals);
+      break;
+    default:
+      echoErrAndExit(`Error: unsupported html template engine: ${engine}`);
+  }
+  return html;
+}
+
+/**
+ * get rendered html
+ */
+function getRenderedHtml() {
+  const doc = readYaml(config.configFileName, 'configs');
+  debug(`your config:`); debug(doc);
+  const locals = readYaml(config.contentFileName, 'information');
+  debug(`your information:`); debug(locals);
+  return templateRender(doc.theme, doc.template_engine, locals);
+}
+
+/**
+ * barnGenerate
+ */
+function barnGenerate() {
+  const html = getRenderedHtml();
+  // TODO: compression & move to dist
 }
