@@ -1,0 +1,51 @@
+{
+  "name": "barn-cli",
+  "version": "0.0.1",
+  "description": "CLI tools for Barn.",
+  "main": "lib/barn",
+  "bin": {
+    "barn": "./bin/barn"
+  },
+  "scripts": {
+    "lint": "eslint ./ --fix",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Maples7/barn-cli.git"
+  },
+  "keywords": [
+    "barn",
+    "CLI",
+    "resume",
+    "CV",
+    "static website generator"
+  ],
+  "author": "Maples7 <maples7.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Maples7/barn-cli/issues"
+  },
+  "homepage": "https://github.com/Maples7/barn-cli#readme",
+  "devDependencies": {
+    "eslint": "^3.17.1",
+    "eslint-config-airbnb": "^14.1.0",
+    "eslint-plugin-import": "^2.2.0",
+    "eslint-plugin-jsx-a11y": "^4.0.0",
+    "eslint-plugin-react": "^6.10.0"
+  },
+  "dependencies": {
+    "clean-css": "^4.0.9",
+    "debug": "^2.6.3",
+    "express": "^4.15.2",
+    "glob": "^7.1.1",
+    "html-minifier": "^3.4.1",
+    "js-yaml": "^3.8.2",
+    "lodash": "^4.17.4",
+    "minimatch": "^3.0.3",
+    "pug": "^2.0.0-beta11",
+    "shelljs": "^0.7.7",
+    "watch": "^1.0.2",
+    "yargs": "^7.0.2"
+  }
+}
