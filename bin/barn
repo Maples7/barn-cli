@@ -5,8 +5,11 @@ const barnStarter = config.barnStarterURL;
 const debugUrl = `http://${config.debug.host}:${config.debug.port}/`;
 
 const fs = require('fs');
+const _ = require('lodash');
 const shell = require('shelljs');
 const yaml = require('js-yaml');
+const glob = require('glob');
+const minimatch = require("minimatch");
 const debug = require('debug')('barn-cli');
 
 if (!shell.which('git')) {
@@ -91,33 +94,56 @@ function readYaml(fileName, action) {
  * render html template
  */
 function templateRender(theme, engine, locals) {
-  let html = null;
+  let htmls = [];
   switch (theme) {
     case 'pug':
       const pug = require('pug');
-      html = pug.renderFile(`themes/${theme}/`, locals);
+      _.forOwn(locals, (pairs, name) => {
+        htmls.push({
+          name, 
+          content: pug.renderFile(`themes/${theme}/${name}.pug`, pairs)
+        });
+      });
       break;
     default:
       echoErrAndExit(`Error: unsupported html template engine: ${engine}`);
+      break;
   }
-  return html;
+  return htmls;
 }
 
 /**
  * get rendered html
  */
 function getRenderedHtml() {
-  const doc = readYaml(config.configFileName, 'configs');
-  debug(`your config:`); debug(doc);
-  const locals = readYaml(config.contentFileName, 'information');
-  debug(`your information:`); debug(locals);
-  return templateRender(doc.theme, doc.template_engine, locals);
+  const spec = readYaml(config.configFileName, 'configs');
+  const locals = {};
+  _.forEach(spec.htmls, (html) => {
+    locals[html] = readYaml(`${config.contentDir}/${html}.yml`, `${html} content`)
+  });
+
+  return {
+    spec,
+    htmls: templateRender(spec.theme, spec.template_engine, locals)
+  }
 }
 
 /**
  * barnGenerate
  */
 function barnGenerate() {
-  const html = getRenderedHtml();
-  // TODO: compression & move to dist
+  const {spec, htmls} = getRenderedHtml();
+  shell.mkdir('-p', 'dist');
+  // compress htmls
+  if (spec.html_minifier.enable) {
+    const html_minifier = require('html-minifier').minify;
+    _.forEach(htmls, (html) => {
+      if (!_.some(spec.html_minifier.exclude, o => minimatch(`${html.name}.html`, o))) {
+        html.content = html_minifier(html.content);
+        // TODO: write to html files
+      }
+    });
+  }
+
+  // TODO: conpress css and write to css files
 }

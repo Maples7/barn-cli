@@ -10,7 +10,7 @@ module.exports = {
 
   // barn generate
   configFileName: 'config.yml',
-  contentFileName: 'content.yml'
+  contentDir: 'content'
 
   // barn deploy
 };
