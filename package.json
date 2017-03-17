@@ -1,6 +1,6 @@
 {
   "name": "barn-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "CLI tools for Barn.",
   "main": "lib/barn",
   "bin": {
