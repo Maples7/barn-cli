@@ -164,6 +164,7 @@ function barnGenerate() {
   const htmls = getRenderedHtml();
   shell.rm('-rf', 'dist');
   shell.mkdir('-p', 'dist/css');
+  shell.mkdir('-p', 'dist/image');
 
   // compress and write htmls
   const html_minifier = require('html-minifier').minify;
@@ -195,6 +196,9 @@ function barnGenerate() {
     }
     fs.writeFileSync(`dist/css/${css_name}.css`, ret_css);
   });
+
+  // copy images
+  shell.cp('-Rf', `themes/${spec.theme}/image/*`, 'dist/image');
 }
 
 /**
