@@ -1,0 +1,218 @@
+#!/usr/bin/env node
+
+const config = require('../config.js');
+const barnStarter = config.barnStarterURL;
+
+const fs = require('fs');
+const _ = require('lodash');
+const shell = require('shelljs');
+const yaml = require('js-yaml');
+const glob = require('glob');
+const minimatch = require("minimatch");
+const debug = require('debug')('barn-cli');
+
+if (!shell.which('git')) {
+  echoErrAndExit('Sorry, this script requires git');
+}
+
+let spec = null;
+const yargs = require('yargs')
+  .usage('Usage: barn <command>')
+  .demandCommand(1, 'You must provide a valid command')
+  .command(['init', 'i'], 'Initiate a barn project with folder name `barn`')
+  .example('barn init', 'Initiate barn starter')
+  .command(['generate', 'g'], 'Generate ultimate static website to folder `dist`')
+  .example('barn generate', 'Generate ultimate static website')
+  .command(['server', 's'], `Watch changes of files and apply them immediately`)
+  .example('barn server', `Watch files' changes and apply them immediately`)
+  .command(['deploy', 'd'], 'Deploy to a git-based server such as Github Pages')
+  .example('barn deploy', 'Deploy to a git-based server')
+  .help('h').alias('help', 'h')
+  .version().alias('v', 'version')
+  .epilog('Copyright 2017, see https://github.com/Maples7/barn for more information.');
+const argv = yargs.argv;
+
+const command = argv._[0];
+debug(`command: ${command}`);
+switch (command) {
+  case 'i':
+  case 'init':
+    git(`git clone ${barnStarter}`);
+    const pjName = barnStarter.slice(barnStarter.lastIndexOf('/') + 1, barnStarter.lastIndexOf('.'));
+    shell.rm('-rf', `${pjName}/.git`);
+    break;
+  case 'g':
+  case 'generate':
+    readUserConfig();
+    barnGenerate();
+    break;
+  case 's':
+  case 'server':
+    readUserConfig();
+    barnServer();
+    break;
+  case 'd':
+  case 'deploy':
+    readUserConfig();
+    barnGenerate();
+    shell.cd('dist');
+    shell.rm('-rf', '.git');
+    let firstOne = true;
+    _.forOwn(spec.deploy.repos, (v, k) => {
+      git('git init');
+      git('git add .');
+      git(`git commit -m "[Barn Auto Deploy] ${new Date()}"`, false);
+      if (firstOne) {
+        git(`git remote add origin ${v}`);
+        firstOne = false;
+      } else {
+        git(`git remote set-url --add origin ${v}`);
+      }
+    });
+    git('git push origin master -f');
+    break;
+  default:
+    yargs.showHelp();
+    break;
+}
+
+// supporting functions
+
+/**
+ * print Error and exit
+ */
+function echoErrAndExit(msg, exit = true) {
+  shell.echo(msg);
+  if (exit) {
+    shell.exit(1);
+  }
+}
+
+/**
+ * read user config
+ */
+function readUserConfig() {
+  if (!spec) {
+    spec = readYaml(config.configFileName, 'configs');
+  }
+  return spec;
+}
+
+/**
+ * run git command
+ */
+function git(cmd, exit = true) {
+  if (shell.exec(cmd).code !== 0) {
+    echoErrAndExit(`Error: ${cmd} failed`, exit);
+  }
+}
+
+/**
+ * read yaml file
+ */
+function readYaml(fileName, action) {
+  let content = null;
+  try {
+    debug(`Reading ${action} from ${fileName}`)
+    content = yaml.safeLoad(fs.readFileSync(fileName), 'utf8');
+    debug(`your ${action}:`);
+    debug(content);
+  } catch (e) {
+    echoErrAndExit(`Error: read configs from ${fileName} failed: ${e}`);
+  }
+  return content;
+}
+
+/**
+ * render html template
+ */
+function templateRender(theme, engine, locals) {
+  let htmls = [];
+  switch (engine) {
+    case 'pug':
+      const pug = require('pug');
+      _.forOwn(locals, (pairs, name) => {
+        htmls.push({
+          name,
+          content: pug.renderFile(`themes/${theme}/${name}.pug`, pairs)
+        });
+      });
+      break;
+    default:
+      echoErrAndExit(`Error: unsupported html template engine: ${engine}`);
+      break;
+  }
+  return htmls;
+}
+
+/**
+ * get rendered html
+ */
+function getRenderedHtml() {
+  const locals = {};
+  _.forEach(spec.htmls, (html) => {
+    locals[html] = readYaml(`${config.contentDir}/${html}.yml`, `${html} content`) || {};
+  });
+
+  return templateRender(spec.theme, spec.template_engine, locals);
+}
+
+/**
+ * barnGenerate
+ */
+function barnGenerate() {
+  const htmls = getRenderedHtml();
+  shell.rm('-rf', 'dist');
+  shell.mkdir('-p', 'dist/css');
+
+  // compress and write htmls
+  const html_minifier = require('html-minifier').minify;
+  _.forEach(htmls, (html) => {
+    if (spec.html_minifier.enable) {
+      if (!_.some(spec.html_minifier.exclude, o => minimatch(`${html.name}.html`, o))) {
+        debug(`conpressing ${html.name}.html ...`);
+        html.content = html_minifier(html.content);
+      }
+    }
+    debug(`writing ${html.name}.html to file ...`)
+    fs.writeFileSync(`dist/${html.name}.html`, html.content);
+  });
+
+  // compress and write csses
+  const csses = [];
+  glob.sync(`themes/${spec.theme}/css/*.css`).forEach((css) => {
+    csses.push(css);
+  });
+
+  const css_minifier = require('clean-css');
+  _.forEach(csses, (css) => {
+    let ret_css = fs.readFileSync(css, 'utf8');
+    const css_name = css.slice(css.lastIndexOf('/') + 1, css.lastIndexOf('.'));
+    debug(`handling css file: ${css_name}`);
+    if (spec.css_minifier.enable &&
+      !_.some(spec.css_minifier.exclude, o => minimatch(`${css_name}.css`, o))) {
+      ret_css = new css_minifier().minify(ret_css).styles;
+    }
+    fs.writeFileSync(`dist/css/${css_name}.css`, ret_css);
+  });
+}
+
+/**
+ * barnServer
+ */
+function barnServer() {
+  barnGenerate();
+  const watch = require('watch');
+
+  shell.echo('Use your browser to open ./dist/*.html to debug, any change of any files would be applied immediately! Have Fun!');
+  watch.watchTree('./', {
+    ignoreDotFiles: true,
+    interval: 5,
+    ignoreDirectoryPattern: /node_modules/
+  }, (f, curr, prev) => {
+    if (!(typeof f == "object" && prev === null && curr === null)) {
+      watch.unwatchTree('./');
+      barnServer();
+    }
+  });
+}
