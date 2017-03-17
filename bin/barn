@@ -151,7 +151,7 @@ function templateRender(theme, engine, locals) {
 function getRenderedHtml() {
   const locals = {};
   _.forEach(spec.htmls, (html) => {
-    locals[html] = readYaml(`${config.contentDir}/${html}.yml`, `${html} content`) || {};
+    locals[html] = readYaml(`themes/${spec.theme}/${config.contentDir}/${html}.yml`, `${html} content`) || {};
   });
 
   return templateRender(spec.theme, spec.template_engine, locals);
