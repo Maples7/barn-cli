@@ -3,14 +3,16 @@ module.exports = {
   barnStarterURL: 'git@github.com:Maples7/barn.git',
 
   // barn server
-  debug: {
-    host: 'localhost',
-    port: 7000
-  },
+  byeWords: [
+    'Good bye',
+    'See you again',
+    'Farewell',
+    'Have a nice day',
+    'Bye!',
+    'Catch you later'
+  ],
 
   // barn generate
   configFileName: 'config.yml',
   contentDir: 'content'
-
-  // barn deploy
 };

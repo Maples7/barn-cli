@@ -2,7 +2,6 @@
 
 const config = require('../config.js');
 const barnStarter = config.barnStarterURL;
-const debugUrl = `http://${config.debug.host}:${config.debug.port}/`;
 
 const fs = require('fs');
 const _ = require('lodash');
@@ -24,8 +23,8 @@ const yargs = require('yargs')
   .example('barn init', 'Initiate barn starter')
   .command(['generate', 'g'], 'Generate ultimate static website to folder `dist`')
   .example('barn generate', 'Generate ultimate static website')
-  .command(['server', 's'], `Start up a local server for debug on ${debugUrl}`)
-  .example('barn server', `Start up debug server on ${debugUrl}`)
+  .command(['server', 's'], `Watch changes of files and apply them immediately`)
+  .example('barn server', `Watch files' changes and apply them immediately`)
   .command(['deploy', 'd'], 'Deploy to a git-based server such as Github Pages')
   .example('barn deploy', 'Deploy to a git-based server')
   .help('h').alias('help', 'h')
@@ -39,6 +38,8 @@ switch (command) {
   case 'i':
   case 'init':
     git(`git clone ${barnStarter}`);
+    const pjName = barnStarter.slice(barnStarter.lastIndexOf('/') + 1, barnStarter.lastIndexOf('.'));
+    shell.rm('-rf', `${pjName}/.git`);
     break;
   case 'g':
   case 'generate':
@@ -53,18 +54,22 @@ switch (command) {
   case 'd':
   case 'deploy':
     readUserConfig();
+    barnGenerate();
     shell.cd('dist');
     shell.rm('-rf', '.git');
     let firstOne = true;
     _.forOwn(spec.deploy.repos, (v, k) => {
       git('git init');
+      git('git add .');
+      git(`git commit -m "[Barn Auto Deploy] ${new Date()}"`, false);
       if (firstOne) {
         git(`git remote add origin ${v}`);
+        firstOne = false;
       } else {
         git(`git remote set-url --add origin ${v}`);
       }
     });
-    git('git push -f');
+    git('git push origin master -f');
     break;
   default:
     yargs.showHelp();
@@ -76,9 +81,11 @@ switch (command) {
 /**
  * print Error and exit
  */
-function echoErrAndExit(msg) {
+function echoErrAndExit(msg, exit = true) {
   shell.echo(msg);
-  shell.exit(1);
+  if (exit) {
+    shell.exit(1);
+  }
 }
 
 /**
@@ -94,9 +101,9 @@ function readUserConfig() {
 /**
  * run git command
  */
-function git(cmd) {
+function git(cmd, exit = true) {
   if (shell.exec(cmd).code !== 0) {
-    echoErrAndExit(`Error: ${cmd} failed`);
+    echoErrAndExit(`Error: ${cmd} failed`, exit);
   }
 }
 
@@ -121,7 +128,7 @@ function readYaml(fileName, action) {
  */
 function templateRender(theme, engine, locals) {
   let htmls = [];
-  switch (theme) {
+  switch (engine) {
     case 'pug':
       const pug = require('pug');
       _.forOwn(locals, (pairs, name) => {
@@ -144,7 +151,7 @@ function templateRender(theme, engine, locals) {
 function getRenderedHtml() {
   const locals = {};
   _.forEach(spec.htmls, (html) => {
-    locals[html] = readYaml(`${config.contentDir}/${html}.yml`, `${html} content`)
+    locals[html] = readYaml(`${config.contentDir}/${html}.yml`, `${html} content`) || {};
   });
 
   return templateRender(spec.theme, spec.template_engine, locals);
@@ -156,40 +163,38 @@ function getRenderedHtml() {
 function barnGenerate() {
   const htmls = getRenderedHtml();
   shell.rm('-rf', 'dist');
-  shell.mkdir('-p', 'dist');
+  shell.mkdir('-p', 'dist/css');
 
   // compress and write htmls
-  if (spec.html_minifier.enable) {
-    const html_minifier = require('html-minifier').minify;
-    _.forEach(htmls, (html) => {
+  const html_minifier = require('html-minifier').minify;
+  _.forEach(htmls, (html) => {
+    if (spec.html_minifier.enable) {
       if (!_.some(spec.html_minifier.exclude, o => minimatch(`${html.name}.html`, o))) {
         debug(`conpressing ${html.name}.html ...`);
         html.content = html_minifier(html.content);
       }
-      debug(`writing ${html.name}.html to file ...`)
-      fs.writeFileSync(`dist/${html.name}.html`, html.content);
-    });
-  }
+    }
+    debug(`writing ${html.name}.html to file ...`)
+    fs.writeFileSync(`dist/${html.name}.html`, html.content);
+  });
 
   // compress and write csses
-  if (spec.css_minifier.enable) {
-    const csses = [];
-    glob.sync(`themes/${spec.theme}/css/*.css`).forEach((css) => {
-      csses.push(css_name);
-    });
+  const csses = [];
+  glob.sync(`themes/${spec.theme}/css/*.css`).forEach((css) => {
+    csses.push(css);
+  });
 
-    const css_minifier = require('clean-css');
-    _.forEach(csses, (css) => {
-      let ret_css = null;
-      const css_name = css.slice(css.lastIndexOf('/') + 1, css.lastIndexOf('.'));
-      if (!_.some(spec, css_minifier.exclude, o => minimatch(`${css_name}.css`, o))) {
-        ret_css = new css_minifier().minify(csses);
-      } else {
-        ret_css = fs.readFileSync(css, 'utf8');
-      }
-      fs.writeFileSync(`dist/css/${css_name}.css`, ret_css);
-    });
-  }
+  const css_minifier = require('clean-css');
+  _.forEach(csses, (css) => {
+    let ret_css = fs.readFileSync(css, 'utf8');
+    const css_name = css.slice(css.lastIndexOf('/') + 1, css.lastIndexOf('.'));
+    debug(`handling css file: ${css_name}`);
+    if (spec.css_minifier.enable &&
+      !_.some(spec.css_minifier.exclude, o => minimatch(`${css_name}.css`, o))) {
+      ret_css = new css_minifier().minify(ret_css).styles;
+    }
+    fs.writeFileSync(`dist/css/${css_name}.css`, ret_css);
+  });
 }
 
 /**
@@ -197,32 +202,17 @@ function barnGenerate() {
  */
 function barnServer() {
   barnGenerate();
-  const express = require('express');
   const watch = require('watch');
-  const app = express();
 
-  app.use(express.static('dist'));
-
-  process.on('exit', exit.bind(null));
-  process.on('SIGINT', exit.bind(null));
-  process.on('uncaughtException', exit.bind(null));
-
-  app.listen(config.port, function () {
-    shell.echo(`browser ${debugUrl} to catch the sketch of your resume!`);
-    watch.watchTree('./', {
-      ignoreDotFiles: true,
-      interval: 5,
-      ignoreDirectoryPattern: /node_modules/
-    }, (f, curr, prev) => {
-      if (!(typeof f == "object" && prev === null && curr === null)) {
-        process.exit(1);
-        barnServer();
-      }
-    });
+  shell.echo('Use your browser to open ./dist/*.html to debug, any change of any files would be applied immediately! Have Fun!');
+  watch.watchTree('./', {
+    ignoreDotFiles: true,
+    interval: 5,
+    ignoreDirectoryPattern: /node_modules/
+  }, (f, curr, prev) => {
+    if (!(typeof f == "object" && prev === null && curr === null)) {
+      watch.unwatchTree('./');
+      barnServer();
+    }
   });
-
-  function exit() {
-    shell.echo('Goodbye!');
-    watch.unwatchTree('./');
-  }
 }
