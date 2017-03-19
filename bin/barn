@@ -199,6 +199,8 @@ function barnGenerate() {
 
   // copy images
   shell.cp('-Rf', `themes/${spec.theme}/image/*`, 'dist/image');
+
+  shell.echo('Success to generate static files in folder dist!');
 }
 
 /**
@@ -211,7 +213,7 @@ function barnServer() {
   shell.echo('Use your browser to open ./dist/*.html to debug, any change of any files would be applied immediately! Have Fun!');
   watch.watchTree('./', {
     ignoreDotFiles: true,
-    interval: 5,
+    interval: 2,
     ignoreDirectoryPattern: /node_modules/
   }, (f, curr, prev) => {
     if (!(typeof f == "object" && prev === null && curr === null)) {
