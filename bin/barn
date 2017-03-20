@@ -200,6 +200,11 @@ function barnGenerate() {
   // copy images
   shell.cp('-Rf', `themes/${spec.theme}/image/*`, 'dist/image');
 
+  // generate CNAME
+  if (spec.cname) {
+    fs.writeFileSync('dist/CNAME', spec.cname);
+  }
+
   shell.echo('Success to generate static files in folder dist!');
 }
 
