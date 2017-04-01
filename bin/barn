@@ -8,7 +8,7 @@ const _ = require('lodash');
 const shell = require('shelljs');
 const yaml = require('js-yaml');
 const glob = require('glob');
-const minimatch = require("minimatch");
+const minimatch = require('minimatch');
 const debug = require('debug')('barn-cli');
 
 if (!shell.which('git')) {
@@ -21,15 +21,22 @@ const yargs = require('yargs')
   .demandCommand(1, 'You must provide a valid command')
   .command(['init', 'i'], 'Initiate a barn project with folder name `barn`')
   .example('barn init', 'Initiate barn starter')
-  .command(['generate', 'g'], 'Generate ultimate static website to folder `dist`')
+  .command(
+    ['generate', 'g'],
+    'Generate ultimate static website to folder `dist`'
+  )
   .example('barn generate', 'Generate ultimate static website')
   .command(['server', 's'], `Watch changes of files and apply them immediately`)
   .example('barn server', `Watch files' changes and apply them immediately`)
   .command(['deploy', 'd'], 'Deploy to a git-based server such as Github Pages')
   .example('barn deploy', 'Deploy to a git-based server')
-  .help('h').alias('help', 'h')
-  .version().alias('v', 'version')
-  .epilog('Copyright 2017, see https://github.com/Maples7/barn for more information.');
+  .help('h')
+  .alias('help', 'h')
+  .version()
+  .alias('v', 'version')
+  .epilog(
+    'Copyright 2017, see https://github.com/Maples7/barn for more information.'
+  );
 const argv = yargs.argv;
 
 const command = argv._[0];
@@ -38,7 +45,10 @@ switch (command) {
   case 'i':
   case 'init':
     git(`git clone ${barnStarter}`);
-    const pjName = barnStarter.slice(barnStarter.lastIndexOf('/') + 1, barnStarter.lastIndexOf('.'));
+    const pjName = barnStarter.slice(
+      barnStarter.lastIndexOf('/') + 1,
+      barnStarter.lastIndexOf('.')
+    );
     shell.rm('-rf', `${pjName}/.git`);
     break;
   case 'g':
@@ -113,7 +123,7 @@ function git(cmd, exit = true) {
 function readYaml(fileName, action) {
   let content = null;
   try {
-    debug(`Reading ${action} from ${fileName}`)
+    debug(`Reading ${action} from ${fileName}`);
     content = yaml.safeLoad(fs.readFileSync(fileName), 'utf8');
     debug(`your ${action}:`);
     debug(content);
@@ -150,8 +160,11 @@ function templateRender(theme, engine, locals) {
  */
 function getRenderedHtml() {
   const locals = {};
-  _.forEach(spec.htmls, (html) => {
-    locals[html] = readYaml(`themes/${spec.theme}/${config.contentDir}/${html}.yml`, `${html} content`) || {};
+  _.forEach(spec.htmls, html => {
+    locals[html] = readYaml(
+      `themes/${spec.theme}/${config.contentDir}/${html}.yml`,
+      `${html} content`
+    ) || {};
   });
 
   return templateRender(spec.theme, spec.template_engine, locals);
@@ -168,30 +181,35 @@ function barnGenerate() {
 
   // compress and write htmls
   const html_minifier = require('html-minifier').minify;
-  _.forEach(htmls, (html) => {
+  _.forEach(htmls, html => {
     if (spec.html_minifier.enable) {
-      if (!_.some(spec.html_minifier.exclude, o => minimatch(`${html.name}.html`, o))) {
+      if (
+        !_.some(spec.html_minifier.exclude, o =>
+          minimatch(`${html.name}.html`, o))
+      ) {
         debug(`conpressing ${html.name}.html ...`);
         html.content = html_minifier(html.content);
       }
     }
-    debug(`writing ${html.name}.html to file ...`)
+    debug(`writing ${html.name}.html to file ...`);
     fs.writeFileSync(`dist/${html.name}.html`, html.content);
   });
 
   // compress and write csses
   const csses = [];
-  glob.sync(`themes/${spec.theme}/css/*.css`).forEach((css) => {
+  glob.sync(`themes/${spec.theme}/css/*.css`).forEach(css => {
     csses.push(css);
   });
 
   const css_minifier = require('clean-css');
-  _.forEach(csses, (css) => {
+  _.forEach(csses, css => {
     let ret_css = fs.readFileSync(css, 'utf8');
     const css_name = css.slice(css.lastIndexOf('/') + 1, css.lastIndexOf('.'));
     debug(`handling css file: ${css_name}`);
-    if (spec.css_minifier.enable &&
-      !_.some(spec.css_minifier.exclude, o => minimatch(`${css_name}.css`, o))) {
+    if (
+      spec.css_minifier.enable &&
+      !_.some(spec.css_minifier.exclude, o => minimatch(`${css_name}.css`, o))
+    ) {
       ret_css = new css_minifier().minify(ret_css).styles;
     }
     fs.writeFileSync(`dist/css/${css_name}.css`, ret_css);
@@ -215,15 +233,21 @@ function barnServer() {
   barnGenerate();
   const watch = require('watch');
 
-  shell.echo('Use your browser to open ./dist/*.html to debug, any change of any files would be applied immediately! Have Fun!');
-  watch.watchTree('./', {
-    ignoreDotFiles: true,
-    interval: 2,
-    ignoreDirectoryPattern: /node_modules/
-  }, (f, curr, prev) => {
-    if (!(typeof f == "object" && prev === null && curr === null)) {
-      watch.unwatchTree('./');
-      barnServer();
+  shell.echo(
+    'Use your browser to open ./dist/*.html to debug, any change of any files would be applied immediately! Have Fun!'
+  );
+  watch.watchTree(
+    './',
+    {
+      ignoreDotFiles: true,
+      interval: 2,
+      ignoreDirectoryPattern: /node_modules/
+    },
+    (f, curr, prev) => {
+      if (!(typeof f == 'object' && prev === null && curr === null)) {
+        watch.unwatchTree('./');
+        barnServer();
+      }
     }
-  });
+  );
 }
