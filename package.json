@@ -14,6 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/Maples7/barn-cli.git"
   },
+  "preferGlobal": true,
   "keywords": [
     "barn",
     "CLI",
