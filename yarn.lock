@@ -85,7 +85,7 @@ character-parser@^2.1.1:
   dependencies:
     is-regex "^1.0.3"
 
-clean-css@4.0.x, clean-css@^4.0.9:
+clean-css@4.0.x:
   version "4.0.9"
   resolved "http://registry.npm.taobao.org/clean-css/download/clean-css-4.0.9.tgz#63ff450b3f939508cc0cd2989bb9daaedc98333e"
   dependencies:
@@ -97,6 +97,12 @@ clean-css@^3.3.0:
   dependencies:
     commander "2.8.x"
     source-map "0.4.x"
+
+clean-css@^4.0.9:
+  version "4.1.11"
+  resolved "https://registry.yarnpkg.com/clean-css/-/clean-css-4.1.11.tgz#2ecdf145aba38f54740f26cefd0ff3e03e125d6a"
+  dependencies:
+    source-map "0.5.x"
 
 cliui@^2.1.0:
   version "2.1.0"
