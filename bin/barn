@@ -35,7 +35,7 @@ const yargs = require('yargs')
   .version()
   .alias('v', 'version')
   .epilog(
-    'Copyright 2017, see https://github.com/Maples7/barn for more information.'
+    `Copyright ${new Date().getFullYear()}, see https://github.com/Maples7/barn for more information.`
   );
 const argv = yargs.argv;
 
@@ -79,7 +79,7 @@ switch (command) {
         git(`git remote set-url --add origin ${v}`);
       }
     });
-    git('git push origin master -f');
+    git('git push --force origin HEAD');
     break;
   default:
     yargs.showHelp();
