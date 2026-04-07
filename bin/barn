@@ -1,22 +1,37 @@
 #!/usr/bin/env node
 
-const config = require('../config.js');
+import config from '../config.js';
 const barnStarter = config.barnStarterURL;
 
-const fs = require('fs');
-const _ = require('lodash');
-const shell = require('shelljs');
-const yaml = require('js-yaml');
-const glob = require('glob');
-const minimatch = require('minimatch');
-const debug = require('debug')('barn-cli');
+import fs from 'fs';
+import _ from 'lodash';
+import shell from 'shelljs';
+import yaml from 'js-yaml';
+import { globSync } from 'glob';
+import { minimatch } from 'minimatch';
+import Debug from 'debug';
+import { minify as htmlMinify } from 'html-minifier-terser';
+import CleanCSS from 'clean-css';
+import pug from 'pug';
+import chokidar from 'chokidar';
+
+import { exec as execCb } from 'child_process';
+import { platform } from 'os';
+import http from 'http';
+import path from 'path';
+
+const debug = Debug('barn-cli');
 
 if (!shell.which('git')) {
   echoErrAndExit('Sorry, this script requires git');
 }
 
 let spec = null;
-const yargs = require('yargs')
+
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+const yargsInstance = yargs(hideBin(process.argv))
   .usage('Usage: barn <command>')
   .demandCommand(1, 'You must provide a valid command')
   .command(['init', 'i'], 'Initiate a barn project with folder name `barn`')
@@ -26,8 +41,16 @@ const yargs = require('yargs')
     'Generate ultimate static website to folder `dist`'
   )
   .example('barn generate', 'Generate ultimate static website')
-  .command(['server', 's'], `Watch changes of files and apply them immediately`)
+  .command(['server', 's'], `Watch changes of files and apply them immediately`, yargs => {
+    yargs.option('port', {
+      alias: 'p',
+      type: 'number',
+      default: 3579,
+      describe: 'Port number for the dev server'
+    });
+  })
   .example('barn server', `Watch files' changes and apply them immediately`)
+  .example('barn server -p 8080', 'Start dev server on port 8080')
   .command(['deploy', 'd'], 'Deploy to a git-based server such as Github Pages')
   .example('barn deploy', 'Deploy to a git-based server')
   .help('h')
@@ -37,7 +60,7 @@ const yargs = require('yargs')
   .epilog(
     `Copyright ${new Date().getFullYear()}, see https://github.com/Maples7/barn for more information.`
   );
-const argv = yargs.argv;
+const argv = await yargsInstance.argv;
 
 const command = argv._[0];
 debug(`command: ${command}`);
@@ -54,35 +77,42 @@ switch (command) {
   case 'g':
   case 'generate':
     readUserConfig();
-    barnGenerate();
+    await barnGenerate();
     break;
   case 's':
   case 'server':
     readUserConfig();
-    barnServer();
+    await barnServer(argv.port);
     break;
   case 'd':
   case 'deploy':
     readUserConfig();
-    barnGenerate();
+    await barnGenerate();
     shell.cd('dist');
-    shell.rm('-rf', '.git');
-    let firstOne = true;
-    _.forOwn(spec.deploy.repos, (v, k) => {
+    const isNewRepo = !fs.existsSync('.git');
+    if (isNewRepo) {
       git('git init');
-      git('git add .');
-      git(`git commit -m "[Barn Auto Deploy] ${new Date()}"`, false);
-      if (firstOne) {
-        git(`git remote add origin ${v}`);
-        firstOne = false;
-      } else {
-        git(`git remote set-url --add origin ${v}`);
-      }
-    });
+      let firstOne = true;
+      _.forOwn(spec.deploy.repos, (v, k) => {
+        if (firstOne) {
+          git(`git remote add origin ${v}`);
+          firstOne = false;
+        } else {
+          git(`git remote set-url --add origin ${v}`);
+        }
+      });
+    }
+    git('git add -A');
+    const hasChanges = shell.exec('git diff --cached --quiet', { silent: true }).code !== 0;
+    if (!hasChanges) {
+      shell.echo('No changes to deploy.');
+      break;
+    }
+    git(`git commit -m "[Barn Auto Deploy] ${new Date()}"`);
     git('git push --force origin HEAD');
     break;
   default:
-    yargs.showHelp();
+    yargsInstance.showHelp();
     break;
 }
 
@@ -124,7 +154,7 @@ function readYaml(fileName, action) {
   let content = null;
   try {
     debug(`Reading ${action} from ${fileName}`);
-    content = yaml.safeLoad(fs.readFileSync(fileName), 'utf8');
+    content = yaml.load(fs.readFileSync(fileName, 'utf8'));
     debug(`your ${action}:`);
     debug(content);
   } catch (e) {
@@ -140,7 +170,6 @@ function templateRender(theme, engine, locals) {
   let htmls = [];
   switch (engine) {
     case 'pug':
-      const pug = require('pug');
       _.forOwn(locals, (pairs, name) => {
         htmls.push({
           name,
@@ -173,35 +202,42 @@ function getRenderedHtml() {
 /**
  * barnGenerate
  */
-function barnGenerate() {
+async function barnGenerate() {
   const htmls = getRenderedHtml();
-  shell.rm('-rf', 'dist');
+  const cacheBust = Date.now();
+  // clean dist but preserve .git for incremental deploy
+  if (fs.existsSync('dist')) {
+    for (const entry of fs.readdirSync('dist')) {
+      if (entry === '.git') continue;
+      shell.rm('-rf', `dist/${entry}`);
+    }
+  }
   shell.mkdir('-p', 'dist/css');
   shell.mkdir('-p', 'dist/image');
 
   // compress and write htmls
-  const html_minifier = require('html-minifier').minify;
-  _.forEach(htmls, html => {
+  for (const html of htmls) {
     if (spec.html_minifier.enable) {
       if (
         !_.some(spec.html_minifier.exclude, o =>
           minimatch(`${html.name}.html`, o))
       ) {
-        debug(`conpressing ${html.name}.html ...`);
-        html.content = html_minifier(html.content);
+        debug(`compressing ${html.name}.html ...`);
+        html.content = await htmlMinify(html.content);
       }
     }
+    // append cache-busting query to local CSS references
+    html.content = html.content.replace(
+      /href="(css\/[^"]+\.css)"/g,
+      `href="$1?v=${cacheBust}"`
+    );
     debug(`writing ${html.name}.html to file ...`);
     fs.writeFileSync(`dist/${html.name}.html`, html.content);
-  });
+  }
 
   // compress and write csses
-  const csses = [];
-  glob.sync(`themes/${spec.theme}/css/*.css`).forEach(css => {
-    csses.push(css);
-  });
+  const csses = globSync(`themes/${spec.theme}/css/*.css`);
 
-  const css_minifier = require('clean-css');
   _.forEach(csses, css => {
     let ret_css = fs.readFileSync(css, 'utf8');
     const css_name = css.slice(css.lastIndexOf('/') + 1, css.lastIndexOf('.'));
@@ -210,7 +246,7 @@ function barnGenerate() {
       spec.css_minifier.enable &&
       !_.some(spec.css_minifier.exclude, o => minimatch(`${css_name}.css`, o))
     ) {
-      ret_css = new css_minifier().minify(ret_css).styles;
+      ret_css = new CleanCSS({ inline: false }).minify(ret_css).styles;
     }
     fs.writeFileSync(`dist/css/${css_name}.css`, ret_css);
   });
@@ -229,25 +265,108 @@ function barnGenerate() {
 /**
  * barnServer
  */
-function barnServer() {
-  barnGenerate();
-  const watch = require('watch');
+async function barnServer(port = 3579) {
+  await barnGenerate();
+  injectLiveReloadScript();
 
-  shell.echo(
-    'Use your browser to open ./dist/*.html to debug, any change of any files would be applied immediately! Have Fun!'
-  );
-  watch.watchTree(
-    './',
-    {
-      ignoreDotFiles: true,
-      interval: 2,
-      ignoreDirectoryPattern: /node_modules/
-    },
-    (f, curr, prev) => {
-      if (!(typeof f == 'object' && prev === null && curr === null)) {
-        watch.unwatchTree('./');
-        barnServer();
-      }
+  const PORT = port;
+  let sseClients = [];
+
+  const MIME_TYPES = {
+    '.html': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.webp': 'image/webp',
+  };
+
+  const server = http.createServer((req, res) => {
+    if (req.url === '/__livereload') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+      res.write('data: connected\n\n');
+      sseClients.push(res);
+      req.on('close', () => {
+        sseClients = sseClients.filter(c => c !== res);
+      });
+      return;
     }
-  );
+
+    let urlPath = req.url.split('?')[0];
+    if (urlPath === '/') urlPath = '/index.html';
+    const filePath = path.join('dist', urlPath);
+    const ext = path.extname(filePath);
+
+    try {
+      const content = fs.readFileSync(filePath);
+      res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+      res.end(content);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+    }
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      echoErrAndExit(`Error: port ${PORT} is already in use. Try: barn server -p <other-port>`);
+    } else {
+      echoErrAndExit(`Error: ${err.message}`);
+    }
+  });
+
+  server.listen(PORT, () => {
+    const url = `http://localhost:${PORT}`;
+    shell.echo(`Server running at ${url}`);
+    shell.echo(
+      'Watching file changes, any change would be applied immediately! Have Fun!'
+    );
+    const openCmd = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'start' : 'xdg-open';
+    execCb(`${openCmd} ${url}`);
+  });
+
+  chokidar.watch('./', {
+    ignored: [/node_modules/, /\.git/, /dist/],
+    ignoreInitial: true
+  }).on('all', async (event, f) => {
+    debug(`${event}: ${f}, regenerating...`);
+    try {
+      await barnGenerate();
+      injectLiveReloadScript();
+      sseClients.forEach(client => {
+        client.write('data: reload\n\n');
+      });
+    } catch (e) {
+      shell.echo(`Error during regeneration: ${e.message}`);
+      shell.echo('Waiting for next file change to retry...');
+    }
+  });
+}
+
+/**
+ * inject livereload script into generated HTML files in dist/
+ */
+function injectLiveReloadScript() {
+  const script = `<script>(function(){var es,t;function connect(){es=new EventSource("/__livereload");es.addEventListener("message",function(e){if(e.data==="reload")location.reload()})}connect();var origPrint=window.print;window.print=function(){if(es){es.close();es=null}origPrint.call(window);t=setTimeout(connect,1000)}})()</script>`;
+  _.forEach(spec.htmls, name => {
+    const filePath = `dist/${name}.html`;
+    try {
+      let html = fs.readFileSync(filePath, 'utf8');
+      if (!html.includes('__livereload')) {
+        html = html.replace('</body>', script + '</body>');
+        fs.writeFileSync(filePath, html);
+      }
+    } catch (e) {
+      debug(`Failed to inject livereload into ${filePath}: ${e.message}`);
+    }
+  });
 }

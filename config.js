@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   // barn init
   barnStarterURL: 'git@github.com:Maples7/barn-starter.git',
 
